@@ -27,6 +27,8 @@
 #include "esp_system.h"
 
 #include "esp_http_client.h"
+#include "esp_timer.h"
+#include <inttypes.h>
 
 #define MAX_HTTP_RECV_BUFFER 512
 #define MAX_HTTP_OUTPUT_BUFFER 2048
@@ -816,37 +818,137 @@ static void http_partial_download(void)
 }
 #endif // CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
 
+static void send_hello_world(void)
+{
+    static int message_counter = 0;  // Static counter that persists between calls
+    message_counter++;
+    
+    ESP_LOGI(TAG, "Sending Hello World message #%d to your computer...", message_counter);
+    
+    esp_http_client_config_t config = {
+        .host = "192.168.1.13",  // CHANGE THIS TO YOUR COMPUTER'S IP ADDRESS
+        .port = 8000,
+        .path = "/hello",
+        .method = HTTP_METHOD_POST,
+        .timeout_ms = 5000,
+        .event_handler = _http_event_handler,
+    };
+    
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    
+    // Get system information that changes
+    uint32_t uptime_ms = esp_timer_get_time() / 1000;  // Uptime in milliseconds
+    uint32_t uptime_seconds = uptime_ms / 1000;
+    uint32_t free_heap = esp_get_free_heap_size();
+    uint32_t min_free_heap = esp_get_minimum_free_heap_size();
+    
+    // Generate some changing calculations
+    int fibonacci = 1;
+    for(int i = 0; i < message_counter; i++) {
+        fibonacci = fibonacci * 2;  // Simple exponential growth
+        if(fibonacci > 10000) fibonacci = 1;  // Reset if too big
+    }
+    
+    // Create dynamic message with changing data
+    char hello_message[1024];
+    snprintf(hello_message, sizeof(hello_message),
+        "🎉 Hello World from ESP32! 🎉\n"
+        "═══════════════════════════════════════\n"
+        "📊 Message Statistics:\n"
+        "   📋 Message Number: %d\n"
+        "   ⏰ Uptime: %lu.%03lu seconds (%lu ms total)\n"
+        "   🧮 Calculation Result: %d (2^%d simplified)\n"
+        "   🆔 Message Hash: %lu\n"
+        "\n"
+        "💾 System Information:\n"
+        "   🔧 Free Heap: %lu bytes\n"
+        "   📉 Min Free Heap: %lu bytes\n"
+        "   🔋 Heap Usage: %.1f%%\n"
+        "\n"
+        "🌐 Network Information:\n"
+        "   📡 ESP32 is connected to WiFi\n"
+        "   🏠 Sending from your local network\n"
+        "   📨 HTTP POST to your computer\n"
+        "\n"
+        "🔢 Random Data (changes each message):\n"
+        "   🎲 Random Value: %lu\n"
+        "   📈 Counter squared: %d\n"
+        "   📊 Counter factorial (mod 1000): %d\n"
+        "\n"
+        "✨ This message was generated at runtime!\n"
+        "═══════════════════════════════════════",
+        
+        message_counter,
+        (unsigned long)uptime_seconds, (unsigned long)(uptime_ms % 1000), (unsigned long)uptime_ms,
+        fibonacci, message_counter,
+        (unsigned long)(message_counter * uptime_ms),  // Simple hash
+        (unsigned long)free_heap,
+        (unsigned long)min_free_heap,
+        100.0 - ((float)free_heap / (free_heap + (256*1024 - free_heap)) * 100.0),
+        esp_random() % 1000,  // Random number 0-999
+        message_counter * message_counter,
+        (message_counter * (message_counter + 1) / 2) % 1000  // Triangular number mod 1000
+    );
+    
+    esp_http_client_set_post_field(client, hello_message, strlen(hello_message));
+    esp_http_client_set_header(client, "Content-Type", "text/plain; charset=utf-8");
+    esp_http_client_set_header(client, "User-Agent", "ESP32-HTTP-Client/1.0");
+    
+    // Add custom headers with changing data
+    char counter_header[32];
+    char uptime_header[32];
+    snprintf(counter_header, sizeof(counter_header), "%d", message_counter);
+    snprintf(uptime_header, sizeof(uptime_header), "%lu", uptime_ms);
+    
+    esp_http_client_set_header(client, "X-ESP32-Message-Counter", counter_header);
+    esp_http_client_set_header(client, "X-ESP32-Uptime-MS", uptime_header);
+    
+    esp_err_t err = esp_http_client_perform(client);
+    if (err == ESP_OK) {
+        int status_code = esp_http_client_get_status_code(client);
+        int64_t content_length = esp_http_client_get_content_length(client);
+        
+        ESP_LOGI(TAG, "✅ SUCCESS! Message #%d sent - HTTP POST Status = %d, content_length = %lld", 
+                message_counter, status_code, content_length);
+        
+        if (status_code == 200) {
+            ESP_LOGI(TAG, "🎉 Hello World message #%d successfully sent to your computer!", message_counter);
+            ESP_LOGI(TAG, "📊 Uptime: %lu.%03lu seconds, Free heap: %lu bytes", 
+                    uptime_seconds, uptime_ms % 1000, free_heap);
+        } else {
+            ESP_LOGI(TAG, "⚠️ Received response code: %d for message #%d", status_code, message_counter);
+        }
+    } else {
+        ESP_LOGE(TAG, "❌ HTTP POST request #%d failed: %s", message_counter, esp_err_to_name(err));
+        ESP_LOGE(TAG, "💡 Make sure:");
+        ESP_LOGE(TAG, "   1. Your computer's IP is correct in the code");
+        ESP_LOGE(TAG, "   2. HTTP server is running on your computer (port 8000)");
+        ESP_LOGE(TAG, "   3. Both devices are on the same network");
+    }
+    
+    esp_http_client_cleanup(client);
+}
+
 static void http_test_task(void *pvParameters)
 {
-    http_rest_with_url();
-    http_rest_with_hostname_path();
-#if CONFIG_ESP_HTTP_CLIENT_ENABLE_BASIC_AUTH
-    http_auth_basic();
-    http_auth_basic_redirect();
-#endif
-#if CONFIG_ESP_HTTP_CLIENT_ENABLE_DIGEST_AUTH
-    http_auth_digest_md5();
-    http_auth_digest_sha256();
-#endif
-    http_encoded_query();
-    http_relative_redirect();
-    http_absolute_redirect();
-    http_absolute_redirect_manual();
-#if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
-    https_with_url();
-#endif
-    https_with_hostname_path();
-    http_redirect_to_https();
-    http_download_chunk();
-    http_perform_as_stream_reader();
-    https_async();
-    https_with_invalid_url();
-    http_native_request();
-#if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
-    http_partial_download();
-#endif
-
-    ESP_LOGI(TAG, "Finish http example");
+    ESP_LOGI(TAG, "🚀 Starting ESP32 Hello World HTTP Client Demo");
+    ESP_LOGI(TAG, "📡 Will send multiple messages with changing data...");
+    
+    // Send first message immediately
+    send_hello_world();
+    
+    // Send messages with increasing delays to show time progression
+    for(int i = 0; i < 4; i++) {
+        int delay_seconds = (i + 1) * 3;  // 3, 6, 9, 12 seconds
+        ESP_LOGI(TAG, "⏳ Waiting %d seconds before sending message #%d...", delay_seconds, i + 2);
+        vTaskDelay(pdMS_TO_TICKS(delay_seconds * 1000));
+        send_hello_world();
+    }
+    
+    ESP_LOGI(TAG, "🏁 Demo completed! All messages sent with changing data.");
+    ESP_LOGI(TAG, "💡 Check your computer to see how the numbers changed!");
+    ESP_LOGI(TAG, "Finish http example - Hello World sent!");
+    
 #if !CONFIG_IDF_TARGET_LINUX
     vTaskDelete(NULL);
 #endif
