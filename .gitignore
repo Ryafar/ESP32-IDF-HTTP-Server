@@ -18,6 +18,7 @@ sdkconfig.ci*
 # IDE / Editor settings
 .vscode/
 .idea/
+.devcontainer/
 *.swp
 *.swo
 *.user
