@@ -1,22 +1,31 @@
-# ESP32 Hello World HTTP Client Component
+# ESP32 Modular HTTP Client Component
 # 
-# This component includes:
-# - main.c: System initialization and application startup
-# - esp32_http_client.c/.h: Generic, reusable HTTP client library
-# - hello_world_app.c/.h: Hello World application using the HTTP client
+# Clean Architecture - Currently building with existing files only
+# TODO: Implement driver and task .c files
 
-# Register component with all required dependencies
+# Register component with existing files only
 idf_component_register(
     SRCS 
-        "main.c"
-        "esp32_http_client.c"
-        "hello_world_app.c"
-        # Previous files kept for reference:
-        # "hello_world_main.c"
-        # "http_hello_client.c"
+        # Core files (existing)
+        "main.c"                        # Current working main
+        "app_init.c"                    # Initialization coordinator
+        
+        # Existing working files (keep for now)
+        "esp32_http_client.c"           # Current HTTP client
+        "hello_world_app.c"             # Current application
+        
+        # TODO: Add these when implemented:
+        # "drivers/wifi_driver.c"
+        # "drivers/http_driver.c"
+        # "tasks/wifi_task.c"
+        # "tasks/hello_world_task.c"
+        
     INCLUDE_DIRS 
-        "."
-        "config"
+        "."                             # Root directory
+        "config"                        # Configuration files
+        "drivers"                       # Driver headers (headers only for now)
+        "tasks"                         # Task headers (headers only for now)
+        
     REQUIRES
         esp_wifi
         esp_netif  
