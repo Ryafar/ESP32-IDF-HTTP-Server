@@ -48,3 +48,4 @@ cmake_install.cmake
 *.tmp
 *.DS_Store
 Thumbs.db
+main/config/credentials.h
